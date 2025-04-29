@@ -63,6 +63,7 @@ set LMS_API_KEY=여기에_LMS_API_키
 │       ├── 기타파일/
 ├── lms.log                  # 프로그램 실행 로그
 ├── main.py                  # 메인 코드 파일
+```
 
 ### 5. 실행 방법
 ```bash
