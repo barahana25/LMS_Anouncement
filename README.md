@@ -64,6 +64,7 @@ set LMS_API_KEY=여기에_LMS_API_키
 ├── lms.log                  # 프로그램 실행 로그
 ├── main.py                  # 메인 코드 파일
 ```
+> Windows와 Linux 모두 지원하며, 운영체제에 따라 경로가 자동 설정됩니다.
 
 ### 5. 실행 방법
 ```bash
@@ -87,3 +88,32 @@ python main.py
 - Canvas LMS API의 토큰 만료 주기를 확인하여 주기적으로 갱신해야 할 수 있습니다.
 - Telegram Bot은 사용자가 직접 생성해야 하며, chat_id를 정확히 설정해야 정상 작동합니다.
 - Linux 서버 운영 시 crontab이나 systemd를 이용해 백그라운드 자동 실행을 설정할 수 있습니다.
+
+### 서버 동기화 (선택사항)
+프로그램이 저장한 강의자료(Univ/ 폴더)를 다른 서버와 동기화하고 싶다면,
+rsync를 이용하여 자동 동기화를 설정할 수 있습니다.
+
+예시 명령어:
+```bash
+rsync -avzu --progress \
+  root@remote_server:/remote/path/to/Univ/ /local/path/to/Univ/
+```
+
+- -a: archive 모드 (파일 권한, 타임스탬프 유지)
+
+- -v: verbose 모드 (진행상황 출력)
+
+- -z: 전송 중 압축
+
+- -u: 최신 파일만 업데이트
+
+- --progress: 전송 진행 상황 표시
+
+> rsync를 cron 작업에 등록하면 정기적으로 자동 동기화가 가능합니다.
+
+### crontab 예시
+```bash
+# 매일 새벽 4시에 Univ 폴더를 서버로 동기화
+0 4 * * * rsync -avzu --progress root@remote_server:/remote/path/to/Univ/ /local/path/to/Univ/
+```
+> 서버와의 SSH 인증을 위해 SSH 키를 설정해두는 것을 추천합니다.
