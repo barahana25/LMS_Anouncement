@@ -89,16 +89,17 @@ class AssignmentDB(DatabaseBase):
                         assignment_id INT,
                         course_id INT,
                         course_name TEXT,
+                        assignment_name TEXT,
                         start_date TEXT NULL,
                         end_date TEXT NULL,
                         description TEXT NULL)""")
-        for assignment_id, course_id, course_name, start_date, end_date, description in tr_list:
+        for assignment_id, course_id, course_name, assignment_name, start_date, end_date, description in tr_list:
             cur.execute("SELECT * FROM assignment WHERE assignment_id=:Id", {"Id": assignment_id})
             if cur.fetchone() is None:
                 cur.execute("""INSERT INTO assignment 
-                            (assignment_id, course_id, course_name, start_date, end_date, description) 
+                            (assignment_id, course_id, course_name, assignment_name, start_date, end_date, description) 
                             VALUES (?, ?, ?, ?, ?, ?)""",
-                            (assignment_id, course_id, course_name, start_date, end_date, description))
+                            (assignment_id, course_id, course_name, assignment_name, start_date, end_date, description))
         con.close()
 
 class LectureDB(DatabaseBase):
@@ -165,6 +166,7 @@ async def main(course_db, assignment_db, lecture_db):
                 assignment.id,
                 course.id,
                 course_name,
+                assignment.name,
                 assignment.unlock_at,
                 assignment.due_at,
                 assignment.description
@@ -220,8 +222,8 @@ async def loop_main():
 
             new_assignments = assignment_watcher.check_for_update()
             for row in new_assignments:
-                logging.info(f"과제 ID: {row[1]}, 과목명: {row[2]}, 과제명: {row[3]}")
-                await send_telegram_message(f"{row[2]} 과목에 새로운 과제 {row[3]}이 등록됨")
+                logging.info(f"과제 ID: {row[2]}, 과목명: {row[3]}, 과제명: {row[4]}")
+                await send_telegram_message(f"{row[3]} 과목에 새로운 과제 {row[4]}이 등록됨\nstart_date: {row[5]}\nend_date: {row[6]}\ndescription: {row[7]}")
 
             new_lectures = lecture_watcher.check_for_update()
             for row in new_lectures:
