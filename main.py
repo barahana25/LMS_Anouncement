@@ -98,7 +98,7 @@ class AssignmentDB(DatabaseBase):
             if cur.fetchone() is None:
                 cur.execute("""INSERT INTO assignment 
                             (assignment_id, course_id, course_name, assignment_name, start_date, end_date, description) 
-                            VALUES (?, ?, ?, ?, ?, ?)""",
+                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
                             (assignment_id, course_id, course_name, assignment_name, start_date, end_date, description))
         con.close()
 
