@@ -6,6 +6,7 @@ import telegram
 import logging
 import asyncio
 import traceback
+from bs4 import BeautifulSoup
 
 telegram_token = os.environ.get('TELEGRAM_TOKEN')
 chat_id = os.environ.get('CHAT_ID')
@@ -223,7 +224,13 @@ async def loop_main():
             new_assignments = assignment_watcher.check_for_update()
             for row in new_assignments:
                 logging.info(f"과제 ID: {row[2]}, 과목명: {row[3]}, 과제명: {row[4]}")
-                await send_telegram_message(f"{row[3]} 과목에 새로운 과제 {row[4]}이 등록됨\nstart_date: {row[5]}\nend_date: {row[6]}\ndescription: {row[7]}")
+                start_time = row[5].strftime("%Y-%m-%d %H:%M:%S") if row[5] else "없음"
+                end_time = row[6].strftime("%Y-%m-%d %H:%M:%S") if row[6] else "없음"
+                description = row[7] if row[7] else "없음"
+                soup_description = BeautifulSoup(description, 'html.parser')
+                description_text = soup_description.get_text(strip=True)
+                description_text = description_text.replace("&nbsp;", "\n")
+                await send_telegram_message(f"{row[3]} 과목에 새로운 과제 {row[4]}이 등록됨\n시작일: {start_time}\n마감일: {end_time}\n내용: {description_text}")
 
             new_lectures = lecture_watcher.check_for_update()
             for row in new_lectures:
