@@ -14,10 +14,10 @@ if telegram_token is None or chat_id is None:
     logging.error("환경변수 'TELEGRAM_TOKEN' 또는 'CHAT_ID'가 설정되지 않았습니다.")
     raise ValueError("환경변수 'TELEGRAM_TOKEN' 또는 'CHAT_ID'가 설정되지 않았습니다.")
 
-windows_path = r'C:\Users\barah\Desktop\Univ'
-linux_path = '/Univ/Univ'
-linux_parent_path = '/Univ/'
-path = windows_path if os.name == 'nt' else linux_path
+windows_path = r'C:\Users\barah\Desktop\Univ' # windows에서 실행 시
+linux_path = '/Univ/Univ/1-2/' # linux에서 실행 시
+linux_parent_path = '/Univ/' # 로그 파일 저장 위치
+path = windows_path if os.name == 'nt' else linux_path # 사용 운영체제에 따라 경로 설정
 parent_path = linux_parent_path if os.name != 'nt' else windows_path
 logging.basicConfig(filename=os.path.join(linux_parent_path, 'lms.log'), level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s', encoding='utf-8')
 logging.info("LMS Bot 시작")
@@ -159,6 +159,7 @@ async def main(course_db, assignment_db, lecture_db):
 
     for course in courses:
         course_name = course.name.split('-')[0]
+        
         course_code = '-'.join(course.course_code.split('-')[1:])
         course_list.append((course.id, course_name, course_code))
 
@@ -174,6 +175,8 @@ async def main(course_db, assignment_db, lecture_db):
             ))
 
         for file in course.get_files():
+            if file.locked_for_user == True:
+                continue
             lecture_list.append((course.id, course_name, file.display_name, file.size))
 
             if list(course.get_files()):
@@ -193,6 +196,7 @@ async def main(course_db, assignment_db, lecture_db):
             else:
                 logging.info(f"⬇️ 새 파일 다운로드: {file.display_name}")
                 await send_telegram_message(f"{course_name} 강의 {file.display_name} 파일 다운로드")
+            
             file.download(save_path)
 
     course_db.set_database(course_list)
@@ -224,8 +228,14 @@ async def loop_main():
             new_assignments = assignment_watcher.check_for_update()
             for row in new_assignments:
                 logging.info(f"과제 ID: {row[2]}, 과목명: {row[3]}, 과제명: {row[4]}")
-                start_time = row[5].strftime("%Y-%m-%d %H:%M:%S") if row[5] else "없음"
-                end_time = row[6].strftime("%Y-%m-%d %H:%M:%S") if row[6] else "없음"
+                try:
+                    start_time = row[5].strftime("%Y-%m-%d %H:%M:%S") if row[5] else "없음"
+                except:
+                    start_time = "없음"
+                try:
+                    end_time = row[6].strftime("%Y-%m-%d %H:%M:%S") if row[6] else "없음"
+                except:
+                    end_time = "없음"
                 description = row[7] if row[7] else "없음"
                 soup_description = BeautifulSoup(description, 'html.parser')
                 description_text = soup_description.get_text(strip=True)
@@ -235,7 +245,7 @@ async def loop_main():
             new_lectures = lecture_watcher.check_for_update()
             for row in new_lectures:
                 logging.info(f"과목명: {row[2]}, 파일명: {row[3]}")
-                await send_telegram_message(f"{row[2]} 과목에 새로운 강의자료 {row[3]}이 등록됨")
+                # await send_telegram_message(f"{row[2]} 과목에 새로운 강의자료 {row[3]}이 등록됨")
 
         except Exception as e:
             logging.error(f"에러 발생: {traceback.format_exc()}")
