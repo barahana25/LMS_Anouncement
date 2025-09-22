@@ -40,6 +40,13 @@ pip install python-telegram-bot canvasapi
 | `CHAT_ID` | 알림을 보낼 텔레그램 채팅방 ID |
 | `LMS_API_KEY` | Canvas LMS API 토큰 |
 
+
+> 참고: LMS API 키 발급 방법
+> ![API 발급 화면](https://github.com/user-attachments/assets/8007c84a-fd9a-42c0-baac-dde5fbda18db)  
+> - LMS 사이트에서 **계정 → 설정**으로 이동합니다.  
+> - API 키(토큰)를 발급받습니다.  
+> - 발급받은 API 키를 환경변수 `LMS_API_KEY`로 등록합니다.  
+
 #### Linux 예시 (.bashrc 또는 .zshrc)
 
 ```bash
