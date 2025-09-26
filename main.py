@@ -299,6 +299,8 @@ async def main(course_db, assignment_db, announcement_db, lecture_db, notificati
         if d_day is not None:
             if not notification_db.was_sent(assignment.id, d_day):
                 due_kst = due_at_utc.astimezone(KST)
+                if d_day == 0:
+                    d_day = "day"
                 msg = (
                     f"[과제 마감 알림] D-{d_day}\n"
                     f"과목: {course_name}\n"
@@ -388,9 +390,9 @@ async def loop_main():
                     end_time = "없음"
                 description = row[7] if row[7] else "없음"
                 soup_description = BeautifulSoup(description, 'html.parser')
-                description_text = soup_description.get_text(strip=True)
-                description_text = description_text.replace("&nbsp;", "\n")
-                await send_telegram_message(f"{row[3]} 과목에 새로운 과제 {row[4]}이 등록됨\n시작일: {start_time}\n마감일: {end_time}\n내용: {description_text}")
+                description_text = soup_description.get_text().strip()
+                # description_text = description_text.replace("&nbsp;", "\n")
+                await send_telegram_message(f"{row[3]} 과목에 새로운 과제 {row[4]}이 등록됨\n시작일: {start_time}\n마감일: {end_time}\n내용:\n{description_text}")
 
             new_lectures = lecture_watcher.check_for_update()
             for row in new_lectures:
@@ -401,7 +403,7 @@ async def loop_main():
             logging.error(f"에러 발생: {traceback.format_exc()}")
             await send_telegram_message(f"❗ LMS Bot 에러 발생: {e}")
 
-        await asyncio.sleep(1000)
+        await asyncio.sleep(600)
 
 if __name__ == "__main__":
     asyncio.run(loop_main())
