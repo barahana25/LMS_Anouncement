@@ -376,7 +376,9 @@ async def loop_main():
                     posted_at = row[6].strftime("%Y-%m-%d %H:%M:%S") if row[6] else "없음"
                 except:
                     posted_at = "없음"
-                await send_telegram_message(f"{row[3]} 과목에 새로운 공지 {row[4]}이 등록됨\n게시글: {row[5]}\n게시일: {posted_at}")
+                soup_description = BeautifulSoup(row[5], 'html.parser')
+                description_text = soup_description.get_text().strip()
+                await send_telegram_message(f"{row[3]} 과목에 새로운 공지 {row[4]}이 등록됨\n게시글: {description_text}\n게시일: {posted_at}")
             new_assignments = assignment_watcher.check_for_update()
             for row in new_assignments:
                 logging.info(f"과제 ID: {row[2]}, 과목명: {row[3]}, 과제명: {row[4]}")
