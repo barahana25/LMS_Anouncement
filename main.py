@@ -6,6 +6,7 @@ import telegram
 import logging
 import asyncio
 import traceback
+import glob
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 
@@ -43,7 +44,7 @@ def parse_canvas_dt(s: str | None):
         return None
     return datetime.fromisoformat(s.replace("Z", "+00:00"))  # aware(UTC)
 
-def decide_d_day(now_kst: datetime, unlock_at_utc, due_at_utc, has_submitted: bool):
+def decide_d_day(now_kst: datetime, due_at_utc, has_submitted: bool):
     """
     반환: 3/1/0 중 하나 또는 None
     규칙:
@@ -54,14 +55,11 @@ def decide_d_day(now_kst: datetime, unlock_at_utc, due_at_utc, has_submitted: bo
     """
     if has_submitted:
         return None
-    if unlock_at_utc is None or due_at_utc is None:
+    if due_at_utc is None:
         return None
 
-    unlock_kst = unlock_at_utc.astimezone(KST)
     due_kst    = due_at_utc.astimezone(KST)
 
-    if now_kst < unlock_kst:
-        return None
     if now_kst > due_kst:
         return None
 
@@ -257,10 +255,48 @@ def make_dir(dir_name):
         os.makedirs(dir_name)
 
 async def main(course_db, assignment_db, announcement_db, lecture_db, notification_db):
+    make_dir("./tmp")
     canvas = Canvas(API_URL, API_KEY)
     courses = canvas.get_courses()
     now_kst = datetime.now(timezone.utc).astimezone(KST)
+    
+    # 2️⃣ canvasapi의 세션 재사용
+    session = canvas._Canvas__requester._session  # 내부 세션 객체
+    headers = {"Authorization": f"Bearer {API_KEY}"}
 
+    # 3️⃣ planner/items 엔드포인트 호출
+    url = f"{API_URL}/api/v1/planner/items"
+    params = {"start_date": now_kst.strftime("%Y-%m-%dT%H:%M:%S.000Z")}
+
+    response = session.get(url, headers=headers, params=params)
+    data = response.json()
+
+    for item in data:
+        assignment_id = int(item.get('html_url').split('/')[-1])
+        course_name = item.get("context_name").split('-')[0]
+        due_at_utc = parse_canvas_dt(item.get("plannable").get("due_at"))
+        has_submitted = item.get("submissions").get("submitted")
+        assignment_name = item.get("plannable").get("title")
+
+        d_day = decide_d_day(now_kst, due_at_utc, has_submitted)
+        logging.info(f"d-day 확인, course_name: {course_name}, assignment_id: {assignment_id}, assignment_name: {assignment_name}, now_kst: {now_kst}, due_at_utc: {due_at_utc}, has_submitted: {has_submitted} → d_day: {d_day}")
+        if d_day is not None:
+            if not notification_db.was_sent(assignment_id, d_day):
+                due_kst = due_at_utc.astimezone(KST)
+                if d_day == 0:
+                    d_day = "day"
+                msg = (
+                    f"[과제 마감 알림] D-{d_day}\n"
+                    f"과목: {course_name}\n"
+                    f"과제: {assignment_name}\n"
+                    f"마감: {due_kst.strftime('%Y-%m-%d %H:%M:%S')} (KST)"
+                )
+                await send_telegram_message(msg)
+                notification_db.mark_sent(
+                    assignment_id=assignment_id,
+                    d_day=d_day,
+                    sent_at=now_kst.strftime("%Y-%m-%d %H:%M:%S")
+                )
     course_list, assignment_list, lecture_list, announcement_list = [], [], [], []
 
     for course in courses:
@@ -290,29 +326,6 @@ async def main(course_db, assignment_db, announcement_db, lecture_db, notificati
                 assignment.due_at,
                 assignment.description
             ))
-
-        has_submitted = bool(getattr(assignment, "has_submitted_submissions", False))
-        unlock_at_utc = parse_canvas_dt(getattr(assignment, "unlock_at", None))
-        due_at_utc    = parse_canvas_dt(getattr(assignment, "due_at", None))
-
-        d_day = decide_d_day(now_kst, unlock_at_utc, due_at_utc, has_submitted)
-        if d_day is not None:
-            if not notification_db.was_sent(assignment.id, d_day):
-                due_kst = due_at_utc.astimezone(KST)
-                if d_day == 0:
-                    d_day = "day"
-                msg = (
-                    f"[과제 마감 알림] D-{d_day}\n"
-                    f"과목: {course_name}\n"
-                    f"과제: {assignment.name}\n"
-                    f"마감: {due_kst.strftime('%Y-%m-%d %H:%M:%S')} (KST)"
-                )
-                await send_telegram_message(msg)
-                notification_db.mark_sent(
-                    assignment_id=assignment.id,
-                    d_day=d_day,
-                    sent_at=now_kst.strftime("%Y-%m-%d %H:%M:%S")
-                )
                 
         for file in course.get_files():
             if file.locked_for_user == True:
@@ -331,8 +344,63 @@ async def main(course_db, assignment_db, announcement_db, lecture_db, notificati
                     logging.info(f"✅ 이미 존재하는 파일이며 크기 동일: {file.display_name}, 다운로드 생략")
                     continue
                 else:
-                    logging.info(f"🔄 파일 크기 다름, 다시 다운로드: {file.display_name}")
-                    await send_telegram_message(f"{course_name} 강의 {file.display_name} 파일 크기가 다름")
+                    if file.display_name.lower().endswith('.pdf'):
+                        old_base = "./tmp/old_file"
+                        new_base = "./tmp/new_file"
+                        diff_base = "./tmp/diff"
+
+                        subprocess.run(f"pdftoppm '{save_path}' {old_base} -png", shell=True, check=True)
+                        tmp_new_pdf = "./tmp/new_file.pdf"
+                        file.download(tmp_new_pdf)
+                        subprocess.run(f"pdftoppm '{tmp_new_pdf}' {new_base} -png", shell=True, check=True)
+
+                        # 🔹 4️⃣ 모든 페이지 비교
+                        old_pages = sorted(glob.glob(f"{old_base}-*.png"))
+                        changed_pages = []
+
+                        for old_img in old_pages:
+                            # old_file-1.png → 1 추출
+                            page_num = os.path.basename(old_img).split('-')[-1].split('.')[0]
+                            new_img = f"{new_base}-{page_num}.png"
+                            diff_img = f"{diff_base}-{page_num}.png"
+
+                            if not os.path.exists(new_img):
+                                continue  # 새 파일에 해당 페이지 없음 → skip
+
+                            diff_result = subprocess.run(
+                                f"diff -q '{old_img}' '{new_img}' > /dev/null",
+                                shell=True
+                            )
+
+                            # 다를 때만 diff 이미지 생성
+                            if diff_result.returncode != 0:
+                                subprocess.run(
+                                    f"compare '{old_img}' '{new_img}' '{diff_img}'",
+                                    shell=True
+                                )
+                                changed_pages.append(page_num)
+                        # 🔹 5️⃣ 결과 처리
+                        if changed_pages:
+                            page_str = ", ".join(changed_pages)
+                            logging.info(f"⚠️ {file.display_name} 변경 감지 (페이지: {page_str})")
+                            await send_telegram_message(
+                                f"📄 {course_name} 강의 '{file.display_name}' 변경 감지됨 (페이지: {page_str})"
+                            )
+                        else:
+                            logging.info(f"✅ {file.display_name} 내용 동일 (크기만 다름)")
+
+                        # 🔹 6️⃣ 새 파일로 교체
+                        os.replace(tmp_new_pdf, save_path)
+
+                        # 🔹 7️⃣ 임시 PNG 정리
+                        for f in glob.glob("./tmp/old_file-*.png") + glob.glob("./tmp/new_file-*.png"):
+                            os.remove(f)
+                        await send_telegram_message(f"{course_name} 강의 {file.display_name} {', '.join(changed_pages)} 페이지 변경됨")
+                        continue
+                        
+                    else:
+                        logging.info(f"🔄 파일 크기 다름, 다시 다운로드: {file.display_name}")
+                        await send_telegram_message(f"{course_name} 강의 {file.display_name} 파일 크기가 다름")
             else:
                 logging.info(f"⬇️ 새 파일 다운로드: {file.display_name}")
                 await send_telegram_message(f"{course_name} 강의 {file.display_name} 파일 다운로드")
