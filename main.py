@@ -9,7 +9,7 @@ import traceback
 import glob
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
-
+import subprocess
 
 telegram_token = os.environ.get('TELEGRAM_TOKEN')
 chat_id = os.environ.get('CHAT_ID')
@@ -292,6 +292,8 @@ async def main(course_db, assignment_db, announcement_db, lecture_db, notificati
                     f"마감: {due_kst.strftime('%Y-%m-%d %H:%M:%S')} (KST)"
                 )
                 await send_telegram_message(msg)
+                if d_day == "day":
+                    d_day = 0
                 notification_db.mark_sent(
                     assignment_id=assignment_id,
                     d_day=d_day,
@@ -445,8 +447,12 @@ async def loop_main():
                 except:
                     posted_at = "없음"
                 soup_description = BeautifulSoup(row[5], 'html.parser')
-                description_text = soup_description.get_text().strip()
-                await send_telegram_message(f"{row[3]} 과목에 새로운 공지 {row[4]}이 등록됨\n게시글: {description_text}\n게시일: {posted_at}")
+                # <p> 태그 기준으로 텍스트 추출
+                paragraphs = [p.get_text(strip=True) for p in soup_description.find_all('p') if p.get_text(strip=True)]
+
+                # '\n'으로 구분된 문자열로 출력
+                result = "\n".join(paragraphs)
+                await send_telegram_message(f"{row[3]} 과목에 새로운 공지 {row[4]}이 등록됨\n게시글: {result}\n게시일: {posted_at}")
             new_assignments = assignment_watcher.check_for_update()
             for row in new_assignments:
                 logging.info(f"과제 ID: {row[2]}, 과목명: {row[3]}, 과제명: {row[4]}")
