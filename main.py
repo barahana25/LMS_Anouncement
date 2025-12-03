@@ -275,7 +275,9 @@ async def main(course_db, assignment_db, announcement_db, lecture_db, notificati
         assignment_id = int(item.get('html_url').split('/')[-1])
         course_name = item.get("context_name").split('-')[0]
         due_at_utc = parse_canvas_dt(item.get("plannable").get("due_at"))
-        has_submitted = item.get("submissions").get("submitted")
+        has_submitted = item.get("submissions")
+        if has_submitted != False:
+            has_submitted = has_submitted.get("submitted")
         assignment_name = item.get("plannable").get("title")
 
         d_day = decide_d_day(now_kst, due_at_utc, has_submitted)
@@ -319,12 +321,18 @@ async def main(course_db, assignment_db, announcement_db, lecture_db, notificati
 
         # 과제 처리 (+ D-day 알림)
         for assignment in course.get_assignments():
+            unlock_at = assignment.unlock_at
+            if unlock_at is None:
+                unlock_at = assignment.created_at
+            due_at = assignment.due_at
+            if due_at is None:
+                due_at = assignment.lock_at
             assignment_list.append((
                 assignment.id,
                 course.id,
                 course_name,
                 assignment.name,
-                assignment.unlock_at,
+                unlock_at,
                 assignment.due_at,
                 assignment.description
             ))
