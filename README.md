@@ -126,5 +126,3 @@ rsync -avzu --progress \
 0 4 * * * rsync -avzu --progress root@remote_server:/remote/path/to/Univ/ /local/path/to/Univ/
 ```
 > 서버와의 SSH 인증을 위해 SSH 키를 설정해두는 것을 추천합니다.
-# LMS_Anouncement_actions
-# LMS_Anouncement_actions
