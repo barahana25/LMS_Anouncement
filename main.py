@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 import subprocess
 import shutil  # 추가
 import requests
+from canvasapi.exceptions import CanvasException
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -37,6 +38,28 @@ KST = timezone(timedelta(hours=9))
 API_REQUEST_TIMEOUT = (10, 30)  # connect timeout, read timeout
 API_REQUEST_RETRIES = 3
 API_RETRY_BACKOFF_SECONDS = 5
+
+def send_ntfy_signal(message, priority="default"):
+    """ntfy.sh로 푸시 알림 및 윈도우 동기화 신호 전송"""
+    # 다른 사람과 겹치지 않는 고유한 토픽명을 설정하세요
+    topic = "barah-univ-lms-2026"
+    url = f"https://ntfy.sh/{topic}"
+
+    headers = {
+        "Title": "LMS Bot Notification",
+        "Priority": priority, # min, low, default, high, max
+        "Encoding": "utf-8"
+    }
+
+    try:
+        # ntfy는 POST 요청의 Body 데이터를 알림 내용으로 사용합니다.
+        response = requests.post(url, data=message.encode('utf-8'), headers=headers, timeout=5)
+        if response.status_code == 200:
+            logging.info("📢 ntfy 신호 전송 성공")
+        else:
+            logging.warning(f"⚠️ ntfy 전송 실패 (Status: {response.status_code})")
+    except Exception as e:
+        logging.error(f"❌ ntfy 전송 중 에러 발생: {e}")
 
 def format_to_kst(utc_str: str | None) -> str:
     if not utc_str:
@@ -528,6 +551,18 @@ def render_pdf_pages(pdf_path, output_base):
         return None
     return (result.stderr or result.stdout or f"exit status {result.returncode}").strip()
 
+def download_canvas_file(file, destination, course_name):
+    try:
+        file.download(destination)
+        return True
+    except (CanvasException, requests.exceptions.RequestException) as e:
+        logging.warning(
+            "Canvas 파일 다운로드 생략 "
+            f"(course={course_name}, file_id={getattr(file, 'id', 'unknown')}, "
+            f"name={file.display_name}, error={type(e).__name__})"
+        )
+        return False
+
 async def main(canvas, course_db, assignment_db, announcement_db, lecture_db, notification_db):
     make_dir(os.path.join(linux_parent_path, "tmp"))
     session = canvas._Canvas__requester._session  # 내부 세션 객체
@@ -652,7 +687,10 @@ async def main(canvas, course_db, assignment_db, announcement_db, lecture_db, no
 
                         tmp_new_pdf = os.path.join(linux_parent_path, "tmp/new_file.pdf")
                         cleanup_pdf_images(old_base, new_base, diff_base)
-                        file.download(tmp_new_pdf)
+                        if os.path.exists(tmp_new_pdf):
+                            os.remove(tmp_new_pdf)
+                        if not download_canvas_file(file, tmp_new_pdf, course_name):
+                            continue
 
                         old_pdf_error = render_pdf_pages(save_path, old_base)
                         new_pdf_error = render_pdf_pages(tmp_new_pdf, new_base)
@@ -672,6 +710,7 @@ async def main(canvas, course_db, assignment_db, announcement_db, lecture_db, no
                                 f"{course_name} 강의 {file.display_name} 파일이 변경되었습니다. "
                                 f"PDF 암호화 또는 손상으로 페이지 비교는 생략했습니다."
                             )
+                            send_ntfy_signal(f"DOWNLOAD_TRIGGER:{course_name}:{file.display_name}")
                             continue
 
                         # 🔹 4️⃣ 모든 페이지 비교
@@ -720,12 +759,15 @@ async def main(canvas, course_db, assignment_db, announcement_db, lecture_db, no
                         
                     else:
                         logging.info(f"🔄 파일 크기 다름, 다시 다운로드: {file.display_name}")
-                        await send_telegram_message(f"{course_name} 강의 {file.display_name} 파일 크기가 다름")
+                        download_message = f"{course_name} 강의 {file.display_name} 파일 크기가 다름"
             else:
                 logging.info(f"⬇️ 새 파일 다운로드: {file.display_name}")
-                await send_telegram_message(f"{course_name} 강의 {file.display_name} 파일 다운로드")
+                download_message = f"{course_name} 강의 {file.display_name} 파일 다운로드"
 
-            file.download(save_path)
+            if not download_canvas_file(file, save_path, course_name):
+                continue
+            await send_telegram_message(download_message)
+            send_ntfy_signal(f"DOWNLOAD_TRIGGER:{course_name}:{file.display_name}")
 
         await asyncio.sleep(1)
 
