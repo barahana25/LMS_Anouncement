@@ -2,3 +2,10 @@
 LMS.db
 lms.log
 nohup.out
+storage/*
+everytime/*
+newbie_storage/*
+backup/*
+lms_web/.env
+lms_web/server.log
+lms_web/server.pid

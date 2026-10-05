@@ -7,12 +7,15 @@
 
 - LMS(Canvas)에서 강의자료 및 과제 목록 수집
 - **새로운 강의자료 또는 과제, 공지사항 등록 감지**
+- **기존 과제·공지사항의 수정 내용(마감일, 본문 등) 변경 감지 및 알림**
 - 변경사항이 있을 경우 **Telegram 채팅방으로 자동 알림**
 - **미제출된 과제 기한을 D-3, D-1, D-day로 나누어 알림**
 - **강의자료를 로컬 디렉터리에 분류 저장**
 - 강의자료 파일 중복/변경 감지 및 다운로드 최적화
 - 과제 및 강의자료를 SQLite 데이터베이스에 저장 및 관리
 - **새벽 2시 ~ 6시 동안 자동 휴식 모드**
+- Canvas API 요청 타임아웃 및 자동 재시도 (429/5xx 대응)
+- 강의자료 추가·변경 시 [ntfy](https://ntfy.sh)로 다른 기기(Windows 등)에 동기화 신호 전송
 
 ## 설치 및 실행 방법
 
@@ -23,11 +26,19 @@
 - Canvas LMS API 접근 권한
 - Telegram Bot API 접근 권한
 - 환경변수 설정 필요
+- `pdftoppm` (PDF 변경 감지용, `poppler-utils` 패키지)
 
 ### 2. 필요 라이브러리 설치
 
 ```bash
-pip install python-telegram-bot canvasapi
+pip install python-telegram-bot canvasapi requests beautifulsoup4
+```
+
+PDF 비교에 사용하는 `pdftoppm`도 설치해야 합니다.
+
+```bash
+# Debian/Ubuntu
+sudo apt install poppler-utils
 ```
 
 ### 3. 환경변수 설정
@@ -39,6 +50,8 @@ pip install python-telegram-bot canvasapi
 | `TELEGRAM_TOKEN` | 텔레그램 봇 토큰 |
 | `CHAT_ID` | 알림을 보낼 텔레그램 채팅방 ID |
 | `LMS_API_KEY` | Canvas LMS API 토큰 |
+| `NTFY_TOPIC` | (선택) ntfy 토픽명. 설정하지 않으면 ntfy 신호를 보내지 않음 |
+| `UNIV_WINDOWS_PATH` | (선택) Windows에서 강의자료 저장 경로. 기본값 `~/Desktop/Univ` |
 
 
 > 참고: LMS API 키 발급 방법
@@ -53,6 +66,7 @@ pip install python-telegram-bot canvasapi
 export TELEGRAM_TOKEN="여기에_텔레그램_토큰"
 export CHAT_ID="여기에_채팅방_ID"
 export LMS_API_KEY="여기에_LMS_API_키"
+export NTFY_TOPIC="여기에_고유한_토픽명"  # 선택
 ```
 
 #### Windows 예시 (cmd)
@@ -60,6 +74,7 @@ export LMS_API_KEY="여기에_LMS_API_키"
 set TELEGRAM_TOKEN=여기에_텔레그램_토큰
 set CHAT_ID=여기에_채팅방_ID
 set LMS_API_KEY=여기에_LMS_API_키
+set NTFY_TOPIC=여기에_고유한_토픽명
 ```
 ### 4. 파일 및 폴더 구조
 
@@ -72,13 +87,14 @@ set LMS_API_KEY=여기에_LMS_API_키
 ├── lms.log                  # 프로그램 실행 로그
 ├── main.py                  # 메인 코드 파일
 ```
-> Windows와 Linux 모두 지원하며, 운영체제에 따라 경로가 자동 설정됩니다.
+> Windows와 Linux 모두 지원하며, 운영체제에 따라 경로가 자동 설정됩니다.  
+> 학기가 바뀌면 `main.py`의 `linux_path`(예: `/Univ/Univ/2-2/`)를 해당 학기 폴더로 수정하세요.
 
 ### 5. 실행 방법
 ```bash
 python main.py
 ```
-- 프로그램은 1시간마다 LMS를 체크하여 새로운 과제나 강의자료를 탐지합니다.
+- 프로그램은 10분마다 LMS를 체크하여 새로운 과제나 강의자료를 탐지합니다.
 - 새벽 2시 ~ 6시 사이에는 자동으로 휴식합니다.
 
 ### 동작 흐름
@@ -87,7 +103,8 @@ python main.py
 3. 새로 추가된 과제나 강의자료가 있는 경우 감지합니다.
 4. 새로운 항목이 있으면 Telegram 채팅방으로 알림을 전송합니다.
 5. 미제출된 과제가 얼마 남지 않았을 경우 D-3, D-1, D-day에 나눠서 Telegram으로 알림을 전송합니다.
-6. 강의자료는 과목별로 분류하여 로컬 디렉터리에 저장합니다.
+6. 강의자료는 과목별로 분류하여 로컬 디렉터리에 저장하고, 다운로드에 성공한 경우에만 알림을 보냅니다.
+7. 강의자료가 추가·변경되면 ntfy로 `DOWNLOAD_TRIGGER:<과목명>:<파일명>` 신호를 전송합니다.
 
 ### 로깅
 - 프로그램의 모든 로그는 lms.log 파일에 기록됩니다.
@@ -96,6 +113,7 @@ python main.py
 ### 주의사항
 - Canvas LMS API의 토큰 만료 주기를 확인하여 주기적으로 갱신해야 할 수 있습니다.
 - Telegram Bot은 사용자가 직접 생성해야 하며, chat_id를 정확히 설정해야 정상 작동합니다.
+- ntfy 토픽은 누구나 구독·발행할 수 있으므로 `NTFY_TOPIC`은 추측하기 어려운 고유한 값으로 설정하세요.
 - Linux 서버 운영 시 crontab이나 systemd를 이용해 백그라운드 자동 실행을 설정할 수 있습니다.
 
 ### 서버 동기화 (선택사항)

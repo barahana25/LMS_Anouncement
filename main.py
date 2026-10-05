@@ -22,9 +22,8 @@ if telegram_token is None or chat_id is None:
     logging.error("환경변수 'TELEGRAM_TOKEN' 또는 'CHAT_ID'가 설정되지 않았습니다.")
     raise ValueError("환경변수 'TELEGRAM_TOKEN' 또는 'CHAT_ID'가 설정되지 않았습니다.")
 
-windows_path = r'C:\Users\barah\Desktop\Univ' # windows에서 실행 시
-linux_path = '/Univ/Univ/2-1/' # linux에서 실행 시
-# linux_path = '/discord/Univ/2-1/' # linux에서 실행 시
+windows_path = os.environ.get('UNIV_WINDOWS_PATH', os.path.join(os.path.expanduser('~'), 'Desktop', 'Univ')) # windows에서 실행 시
+linux_path = '/Univ/Univ/2-2/' # linux에서 실행 시
 linux_parent_path = '/Univ/' # 로그 파일 저장 위치
 path = windows_path if os.name == 'nt' else linux_path # 사용 운영체제에 따라 경로 설정
 parent_path = linux_parent_path if os.name != 'nt' else windows_path
@@ -34,6 +33,7 @@ logging.info("LMS Bot 시작")
 db_path = os.path.join(linux_parent_path, "LMS.db")
 API_URL = "https://canvas.kumoh.ac.kr"
 API_KEY = os.environ.get('LMS_API_KEY')
+NTFY_TOPIC = os.environ.get('NTFY_TOPIC')  # 미설정 시 ntfy 신호 전송 안 함
 KST = timezone(timedelta(hours=9))
 API_REQUEST_TIMEOUT = (10, 30)  # connect timeout, read timeout
 API_REQUEST_RETRIES = 3
@@ -41,9 +41,10 @@ API_RETRY_BACKOFF_SECONDS = 5
 
 def send_ntfy_signal(message, priority="default"):
     """ntfy.sh로 푸시 알림 및 윈도우 동기화 신호 전송"""
-    # 다른 사람과 겹치지 않는 고유한 토픽명을 설정하세요
-    topic = "barah-univ-lms-2026"
-    url = f"https://ntfy.sh/{topic}"
+    # 다른 사람과 겹치지 않는 고유한 토픽명을 환경변수 NTFY_TOPIC으로 설정하세요
+    if not NTFY_TOPIC:
+        return
+    url = f"https://ntfy.sh/{NTFY_TOPIC}"
 
     headers = {
         "Title": "LMS Bot Notification",
